@@ -1,0 +1,1 @@
+Open index.html directly, or deploy this repository as a static site. preview.gif is only the animation preview.
