@@ -56,7 +56,10 @@ body{font-family:"SF Pro Text","PingFang SC","Microsoft YaHei",Inter,system-ui,s
   transform:rotateY(180deg);
 }
 .tarot-back::before,.tarot-back::after{display:none}
-.launch-kicker,.launch-title,.launch-subtitle,.launch-day-ribbon{animation:tarot-caption 4.8s ease both}
+.launch-kicker,.launch-title,.launch-subtitle,.launch-day-ribbon{
+  animation:tarot-caption 4.8s ease both;
+  visibility:hidden;
+}
 .launch-kicker{
   margin:4px 0 9px;color:#aaa3ae;font-size:.58rem;letter-spacing:.28em;text-transform:uppercase
 }
