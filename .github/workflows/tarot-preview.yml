@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Render animation frames
+      - name: Render smoother animation frames
         shell: bash
         run: |
           set -euo pipefail
@@ -28,10 +28,10 @@ jobs:
             echo 'Chrome/Chromium not found on runner' >&2
             exit 1
           fi
+          rm -rf /tmp/tarot-frames
           mkdir -p /tmp/tarot-frames
-          budgets=(200 700 1200 1700 2200 2700 3200 3600 4000 4400 4800 5200)
           i=0
-          for ms in "${budgets[@]}"; do
+          for ms in $(seq 0 60 5220); do
             printf -v n '%03d' "$i"
             "$CHROME" \
               --headless=new \
@@ -46,7 +46,7 @@ jobs:
             i=$((i+1))
           done
 
-      - name: Build animated GIF
+      - name: Build smoother animated GIF
         shell: bash
         run: |
           set -euo pipefail
@@ -55,9 +55,9 @@ jobs:
             sudo apt-get install -y ffmpeg
           fi
           ffmpeg -y \
-            -framerate 2.4 \
+            -framerate 16.6667 \
             -i /tmp/tarot-frames/frame-%03d.png \
-            -vf "fps=12,scale=390:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=160[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" \
+            -vf "scale=330:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=192[p];[s1][p]paletteuse=dither=bayer:bayer_scale=2" \
             -loop 0 \
             tarot-share/preview.gif
 
@@ -71,5 +71,5 @@ jobs:
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m 'Render Tarot share preview'
+          git commit -m 'Render smoother Tarot share preview'
           git push
