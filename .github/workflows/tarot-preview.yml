@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Capture smooth browser preview
+      - name: Render real browser frames
         shell: bash
         run: |
           set -euo pipefail
@@ -29,48 +29,49 @@ jobs:
             exit 1
           fi
 
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb xdotool ffmpeg
+          rm -rf /tmp/tarot-frames
+          mkdir -p /tmp/tarot-frames
+          i=0
+          for ms in $(seq 90 90 5310); do
+            printf -v n '%03d' "$i"
+            "$CHROME" \
+              --headless=new \
+              --no-sandbox \
+              --disable-gpu \
+              --hide-scrollbars \
+              --allow-file-access-from-files \
+              --window-size=390,844 \
+              --virtual-time-budget="$ms" \
+              --screenshot="/tmp/tarot-frames/frame-${n}.png" \
+              "file://${GITHUB_WORKSPACE}/tarot-share/index.html" \
+              >/dev/null 2>&1
+            i=$((i+1))
+          done
 
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 390x844x24 >/tmp/xvfb.log 2>&1 &
-          XVFB_PID=$!
-          trap 'kill ${CHROME_PID:-0} ${XVFB_PID:-0} 2>/dev/null || true' EXIT
-          sleep 0.5
-
-          "$CHROME" \
-            --no-sandbox \
-            --disable-gpu \
-            --disable-dev-shm-usage \
-            --hide-scrollbars \
-            --kiosk \
-            --window-position=0,0 \
-            --window-size=390,844 \
-            --allow-file-access-from-files \
-            "file://${GITHUB_WORKSPACE}/tarot-share/index.html" \
-            >/tmp/chrome.log 2>&1 &
-          CHROME_PID=$!
-
-          sleep 2
-          xdotool key ctrl+r || true
-          sleep 0.08
-
+      - name: Build animated GIF
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
           ffmpeg -y \
-            -f x11grab \
-            -framerate 30 \
-            -video_size 390x844 \
-            -i :99.0 \
-            -t 5.4 \
-            -c:v libx264 \
-            -preset ultrafast \
-            -pix_fmt yuv420p \
-            /tmp/tarot-preview.mp4
-
-          ffmpeg -y \
-            -i /tmp/tarot-preview.mp4 \
-            -vf "fps=15,scale=330:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=192[p];[s1][p]paletteuse=dither=bayer:bayer_scale=2" \
+            -framerate 11.1111 \
+            -i /tmp/tarot-frames/frame-%03d.png \
+            -vf "scale=330:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=192[p];[s1][p]paletteuse=dither=bayer:bayer_scale=2" \
             -loop 0 \
             tarot-share/preview.gif
+
+      - name: Sanity-check preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          size=$(stat -c%s tarot-share/preview.gif)
+          frames=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of default=nokey=1:noprint_wrappers=1 tarot-share/preview.gif)
+          echo "preview bytes=$size frames=$frames"
+          test "$size" -gt 50000
+          test "$frames" -gt 40
 
       - name: Commit preview
         shell: bash
@@ -79,6 +80,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add tarot-share/preview.gif
-          git commit -m 'Render clean Tarot share preview'
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Render working Tarot share preview'
           git pull --rebase origin main
           git push
