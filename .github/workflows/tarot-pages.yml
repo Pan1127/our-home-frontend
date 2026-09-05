@@ -1,0 +1,109 @@
+name: Deploy tarot share to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tarot-share/**'
+      - '.github/workflows/tarot-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure Pages is enabled for Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/pages"
+          code=$(curl -sS -o /tmp/pages.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API" || true)
+          if [ "$code" = "404" ]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API" \
+              -d '{"build_type":"workflow"}' >/tmp/pages-create.json
+          elif [ "$code" != "200" ]; then
+            cat /tmp/pages.json || true
+            exit 1
+          fi
+
+      - name: Build standalone Pages artifact
+        run: |
+          set -euo pipefail
+          mkdir -p _site/tarot-share/assets
+          cp tarot-share/index.html _site/tarot-share/index.html
+
+          base='https://t3tpao.xyz/home/assets'
+          for f in \
+            tarot-launch-bg.jpg \
+            tarot-launch-bg-1206x2622.jpg \
+            tarot-card-front.jpg \
+            tarot-card-back.jpg
+          do
+            curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 \
+              "$base/$f" -o "_site/tarot-share/assets/$f"
+          done
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('_site/tarot-share/index.html')
+          s = p.read_text(encoding='utf-8')
+          for name in [
+              'tarot-launch-bg.jpg',
+              'tarot-launch-bg-1206x2622.jpg',
+              'tarot-card-front.jpg',
+              'tarot-card-back.jpg',
+          ]:
+              s = s.replace(
+                  f'https://t3tpao.xyz/home/assets/{name}',
+                  f'assets/{name}'
+              )
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Tarot Launch</title>
+          <meta http-equiv="refresh" content="0; url=./tarot-share/">
+          <script>location.replace('./tarot-share/');</script>
+          <a href="./tarot-share/">Open Tarot Launch</a>
+          HTML
+
+          touch _site/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
